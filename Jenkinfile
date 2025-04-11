@@ -1,0 +1,105 @@
+pipeline {
+    agent any
+
+    environment {
+        IMAGE_NAME = 'sample-flask-app:latest'
+    }
+
+    stages {
+        stage('Check Docker Availability') {
+            steps {
+                script {
+                    // Check if Docker socket is mounted (i.e., Docker is available)
+                    if (fileExists('/var/run/docker.sock')) {
+                        echo "✅ Docker is available on this Jenkins agent."
+                    } else {
+                        echo "❌ Docker is not available on this Jenkins agent. Docker-related steps will be skipped."
+                        currentBuild.result = 'ABORTED' // Optionally abort the build if Docker is missing
+                        error("Docker is not available") // This will terminate the build if Docker is not available
+                    }
+                }
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh '''
+                    echo "🔧 Installing jq and Trivy (if not present)..."
+
+                    if ! command -v jq &> /dev/null; then
+                      echo "Installing jq..."
+                      apt-get update && apt-get install -y jq
+                    else
+                      echo "✅ jq already installed"
+                    fi
+
+                    if ! command -v trivy &> /dev/null; then
+                      echo "Installing Trivy..."
+                      apt-get update && \
+                      apt-get install -y wget gnupg lsb-release apt-transport-https curl && \
+                      curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor -o /usr/share/keyrings/trivy.gpg && \
+                      echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/trivy.list && \
+                      apt-get update && apt-get install -y trivy
+                    else
+                      echo "✅ Trivy already installed"
+                    fi
+                '''
+            }
+        }
+
+        stage('Check Python') {
+            steps {
+                sh '''
+                    echo "🔍 Checking for Python3..."
+                    if ! command -v python3 &> /dev/null; then
+                        echo "⚠️ Python3 not found. Installing..."
+                        apt-get update && apt-get install -y python3 python3-pip
+                    else
+                        echo "✅ Python3 is already installed: $(python3 --version)"
+                    fi
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            when {
+                expression { fileExists('/var/run/docker.sock') }  // Ensure Docker socket is available
+            }
+            steps {
+                sh 'docker build -t $IMAGE_NAME .'
+            }
+        }
+
+        stage('Scan Docker Image with Trivy') {
+            when {
+                expression { fileExists('/var/run/docker.sock') }  // Ensure Docker socket is available
+            }
+            steps {
+                sh '''
+                    echo "🔒 Scanning Docker image for vulnerabilities..."
+                    trivy image --format json --output trivy-results.json --severity HIGH,CRITICAL $IMAGE_NAME
+
+                    echo "📊 Checking for vulnerabilities with CVSS >= 7.0..."
+                    jq '.Results[].Vulnerabilities[] | select(.CVSS.nvd.V3Score >= 7.0)' trivy-results.json > high-cvss.json
+
+                    if [ -s high-cvss.json ]; then
+                      echo "❌ High CVSS vulnerabilities found!"
+                      cat high-cvss.json
+                      exit 1
+                    else
+                      echo "✅ No high-severity vulnerabilities found."
+                    fi
+                '''
+            }
+        }
+
+        stage('Deploy (Simulated)') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                echo '🚀 Simulated deployment step. Add your real deploy logic here.'
+            }
+        }
+    }
+}
