@@ -6,50 +6,7 @@ pipeline {
     }
 
     stages {
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                    echo "🔧 Installing jq and Trivy (if not present)..."
-
-                    if ! command -v jq &> /dev/null; then
-                      echo "Installing jq..."
-                      apt-get update && apt-get install -y jq
-                    else
-                      echo "✅ jq already installed"
-                    fi
-
-                    if ! command -v trivy &> /dev/null; then
-                      echo "Installing Trivy..."
-                      apt-get update && \
-                      apt-get install -y wget gnupg lsb-release apt-transport-https curl && \
-                      curl -fsSL https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor -o /usr/share/keyrings/trivy.gpg && \
-                      echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -cs) main" > /etc/apt/sources.list.d/trivy.list && \
-                      apt-get update && apt-get install -y trivy
-                    else
-                      echo "✅ Trivy already installed"
-                    fi
-                '''
-            }
-        }
-
-        stage('Check Python') {
-            steps {
-                sh '''
-                    echo "🔍 Checking for Python3..."
-                    if ! command -v python3 &> /dev/null; then
-                        echo "⚠️ Python3 not found. Installing..."
-                        apt-get update && apt-get install -y python3 python3-pip
-                    else
-                        echo "✅ Python3 is already installed: $(python3 --version)"
-                    fi
-                '''
-            }
-        }
-
         stage('Build Docker Image') {
-            when {
-                expression { fileExists('/var/run/docker.sock') }  // Ensure Docker socket is available
-            }
             steps {
                 sh 'docker build -t $IMAGE_NAME .'
             }
