@@ -6,21 +6,6 @@ pipeline {
     }
 
     stages {
-        stage('Check Docker Availability') {
-            steps {
-                script {
-                    // Check if Docker socket is mounted (i.e., Docker is available)
-                    if (fileExists('/var/run/docker.sock')) {
-                        echo "✅ Docker is available on this Jenkins agent."
-                    } else {
-                        echo "❌ Docker is not available on this Jenkins agent. Docker-related steps will be skipped."
-                        currentBuild.result = 'ABORTED' // Optionally abort the build if Docker is missing
-                        error("Docker is not available") // This will terminate the build if Docker is not available
-                    }
-                }
-            }
-        }
-
         stage('Install Dependencies') {
             steps {
                 sh '''
